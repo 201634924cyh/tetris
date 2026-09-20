@@ -6,7 +6,7 @@
 ![Dependency](https://img.shields.io/badge/dependency-pygame-2C8E4E)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Version](https://img.shields.io/badge/version-1.1-blue)
-![Selftest](https://img.shields.io/badge/selftest-98%20passed-brightgreen)
+![Selftest](https://img.shields.io/badge/selftest-102%20passed-brightgreen)
 
 ## 预览
 
@@ -94,7 +94,7 @@ cd tetris
 
 ### 计分
 
-所有基础分都会乘以当前等级（`level`）。等级 = 累计消行数 ÷ 10 + 1。
+所有基础分都会乘以当前等级（`level`，含 T-Spin 无消行的 400 分）。等级 = 累计消行数 ÷ 10 + 1。
 
 | 消行 | 基础分 | | T-Spin | 基础分 |
 | :---: | ---: | --- | :---: | ---: |
@@ -103,7 +103,7 @@ cd tetris
 | TRIPLE ×3 | 500 | | T-Spin ×2 | 1200 |
 | TETRIS ×4 | 800 | | T-Spin ×3 | 1600 |
 
-另外：硬降每格 **2 分**；连击额外 **50 × (连击数 − 1) × 等级**。
+另外：硬降每格 **2 分**（不随等级放大）；连击额外 **50 × (连击数 − 1) × 等级**。
 
 ## 自检
 
@@ -111,15 +111,17 @@ cd tetris
 python selftest.py
 ```
 
-用 `SDL_VIDEODRIVER=dummy` 起虚拟显示，跑 **94 条断言**，覆盖：
+用 `SDL_VIDEODRIVER=dummy` 起虚拟显示，跑 **102 条断言**，覆盖：
 
 - **状态机**：菜单 / 游玩 / 暂停 / 结束四条路径的全部分支，含结束态下输入失效、`Enter` 或 `R` 重开、重开后分数与棋盘清零、最高分保留。
 - **SRS 踢墙**：构造贴墙与贴地形的盘面，逐条验证踢墙表命中的偏移量与最终位置。
 - **消行与计分**：一次消 1 / 2 / 4 行的行数、分数、棋盘残留格数（这里抓到过一个真 bug，见下）；TETRIS 加分、连击累加、等级提升。
+- **T-Spin 计分**：无消行的 T-Spin 按 `400 × level` 计分（level 1 → 400、level 5 → 2000），普通锁定不加分。
 - **手感**：锁定延迟到时自动锁定、地面移动能重置倒计时、软降/硬降计分、DAS 连发节奏。
 - **Hold / 7-bag**：暂存后换出的方块正确、同一落地周期不能连续暂存、每 7 个方块内 7 种各出现一次。
 - **渲染**：五种状态各画一遍并截图，再做**像素级扫描** —— 棋盘内确有高饱和度方块色、侧栏卡片之间是背景色（说明没画歪）、暂停/结束遮罩确实把画面压暗、消行动画确实出现接近纯白的闪光行、画面无非预期暗斑。
 - **缩放**：窗口↔画布坐标换算在多种窗口尺寸下都不错位。
+- **中文字体字形校验**：反面样本（名字沾边但画不出汉字的字体）必须被判为不达标、`Font(None)` 探针判为不达标、正向命中能画汉字，再加一条**反事实断言** —— 候选全换成无汉字字体时必须退回默认字体，而不是拿来就用。
 
 自检会顺带把 README 用的截图重新生成到 `preview/`（总览图需要 Pillow，没装会自动跳过，不影响断言结论）。
 
@@ -137,7 +139,7 @@ python tetris.py --scale 1.5      # 初始窗口缩放
 ```
 tetris/
 ├── tetris.py          # 游戏本体：配置、配色、音效、方块、游戏逻辑、渲染、应用外壳（单文件）
-├── selftest.py        # 无窗口自检，94 条断言
+├── selftest.py        # 无窗口自检，102 条断言
 ├── run.bat            # Windows 启动脚本
 ├── run.sh             # macOS / Linux 启动脚本
 ├── requirements.txt   # 依赖（pygame 必需，numpy 可选）
@@ -166,7 +168,7 @@ tetris/
 | --- | --- |
 | 手感（连发速度、锁定时间） | 顶部 `DAS` / `ARR` / `LOCK_DELAY` / `SOFT_DROP_INTERVAL` |
 | 下落速度曲线 | `GRAVITY` 列表（20 级）与 `LINES_PER_LEVEL` |
-| 计分规则 | `SCORE_LINES` / `SCORE_TSPIN` / `SCORE_TSPIN_MINI`，以及 `_apply_clear()` |
+| 计分规则 | `SCORE_LINES` / `SCORE_TSPIN` / `SCORE_TSPIN_NO_LINES` / `SCORE_TSPIN_MINI`，以及 `_apply_clear()` |
 | 格子大小 / 棋盘尺寸 | `CELL`、`COLS`、`ROWS`（画布尺寸 `CANVAS_W/H` 会自动跟着算） |
 | 配色 | 第 2 节的 `C_*` 常量与 `PIECE_COLORS` |
 | 方块手感（旋转矩阵、踢墙） | `MATRICES`、`KICKS_JLSTZ`、`KICKS_I` |

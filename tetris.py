@@ -130,8 +130,10 @@ KICKS_I = {
 }
 
 # 计分表：0/1/2/3/4 行（索引即行数），T-Spin 单列
+# 注意：所有基础分都要乘以当前等级（level）；无消行的 T-Spin 走 SCORE_TSPIN_NO_LINES。
 SCORE_LINES = {1: 100, 2: 300, 3: 500, 4: 800}
 SCORE_TSPIN = {1: 800, 2: 1200, 3: 1600}
+SCORE_TSPIN_NO_LINES = 400
 SCORE_TSPIN_MINI = {0: 100, 1: 200, 2: 400}
 
 
@@ -847,7 +849,8 @@ class Game:
         else:
             self.sfx.play("lock", 0.8)
             if tspin:
-                self.score += 400
+                # 无消行的 T-Spin 同样按等级计分，与 _apply_clear 里的 SCORE_TSPIN 保持一致
+                self.score += SCORE_TSPIN_NO_LINES * self.level
                 self._toast("T-SPIN", C_WARN)
                 self.sfx.play("tspin")
             self.combo = 0
