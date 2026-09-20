@@ -629,6 +629,47 @@ section("15. 真实窗口模式（非 dummy）")
 print("  跳过：真实窗口由 --frames 单独验证")
 
 # ==============================================================
+section("16. 中文字体字形校验（跨平台不出现豆腐块）")
+# ==============================================================
+# 反面样本：本机确实存在、但明确不含汉字字形的字体
+bad_path = pygame.font.match_font("dejavusans,arial,liberationsans")
+bad_font = None
+if bad_path and os.path.exists(bad_path):
+    try:
+        bad_font = pygame.font.Font(bad_path, 24)
+    except Exception:
+        bad_font = None
+check("反面样本：本机能取到一个「名字沾边但没有汉字字形」的字体",
+      bad_font is not None and not T.font_covers_cjk(bad_font),
+      f"path={bad_path}")
+check("探针：默认字体 Font(None) 被正确判定为画不出汉字",
+      not T.font_covers_cjk(pygame.font.Font(None, 24)))
+
+usable = None
+for _p in T.FONT_CANDIDATES:
+    if not os.path.exists(_p):
+        continue
+    try:
+        _pf = pygame.font.Font(_p, 24)
+    except Exception:
+        continue
+    if T.font_covers_cjk(_pf):
+        usable = _p
+        break
+if usable:
+    check("正向：系统装了中文字体时，get_font 选中的字体能画出汉字",
+          T.font_covers_cjk(T.get_font(24)), f"可用候选 {usable}")
+else:
+    print("  [skip] 本机没有任何候选中文字体，正向断言跳过")
+
+if bad_font is not None:
+    _same, _src = T.font_regression(bad_path)
+    check("反事实：候选全是无汉字字体时退回默认字体，而不是拿来就用",
+          _same, f"采用了 {_src}")
+else:
+    print("  [skip] 取不到无汉字反面样本，反事实断言跳过")
+
+# ==============================================================
 print(f"\n{'=' * 52}")
 print(f"通过 {PASS} 项，失败 {FAIL} 项")
 if FAILURES:

@@ -30,7 +30,13 @@ fi
 
 if ! "$PY" -c "import pygame" >/dev/null 2>&1; then
     echo "pygame is not installed for $PY, installing it now..."
-    "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt         || "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pygame-ce
+    # 主用腾讯云镜像，失败再退官方源
+    # （清华 pypi.tuna 会对新版 pip 返回 403 Forbidden，报错还伪装成
+    #  "No matching distribution found"，已弃用）
+    "$PY" -m pip install --disable-pip-version-check -i https://mirrors.cloud.tencent.com/pypi/simple -r requirements.txt \
+        || "$PY" -m pip install --disable-pip-version-check -r requirements.txt \
+        || "$PY" -m pip install --disable-pip-version-check -i https://mirrors.cloud.tencent.com/pypi/simple pygame-ce \
+        || "$PY" -m pip install --disable-pip-version-check pygame-ce
 fi
 
 exec "$PY" tetris.py "$@"

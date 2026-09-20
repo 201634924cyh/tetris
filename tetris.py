@@ -16,6 +16,7 @@
     python tetris.py                # 正常开始
     python tetris.py --frames 120   # 跑 120 帧后自动退出（自检用）
     python tetris.py --seed 42      # 固定随机种子（复现用）
+    python tetris.py --version      # 打印版本号
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ import random
 import sys
 
 import pygame
+
+__version__ = "1.1"
 
 # ==============================================================
 # 1. 基础配置
@@ -148,26 +151,183 @@ def clamp(v, lo, hi):
     return lo if v < lo else (hi if v > hi else v)
 
 
+# ------------------------------------------------------------------
+# 中文字体：跨平台探测 + 字形校验
+# ------------------------------------------------------------------
+# 按「候选路径 → fontconfig 族名 → SysFont」逐级探测，每一级都必须通过
+# 字形校验 —— 只有真的画得出汉字才会被采用。
+#
+# 为什么非要验字形：pygame 的 match_font 会给出「名字沾边、其实没有汉字」
+# 的字体（本机实测 dejavusans / arial / liberationsans 一律命中 Arial
+# Narrow），一旦采用，界面中文就会静默变成一屏方框。旧版本把 dejavusans
+# 放在候选末尾当兜底 —— 那恰恰是最坏的一种兜底。
+FONT_CANDIDATES = [
+    # Windows
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyhbd.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+    r"C:\Windows\Fonts\Deng.ttf",
+    r"C:\Windows\Fonts\simsun.ttc",
+    # macOS
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/Library/Fonts/Arial Unicode.ttf",
+    # Linux（Debian/Ubuntu · Fedora · Arch 的常见安装位置）
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/wenquanyi/wqy-zenhei/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
+]
+
+# 路径未必覆盖所有发行版，再交给 fontconfig 按族名找一遍。
+# 这里刻意不放 dejavusans / arial 这类没有汉字字形的通用族名。
+FONT_FAMILIES = ("notosanscjksc,notosanscjk,sourcehansanssc,wqyzenhei,wqymicrohei,"
+                 "microsoftyahei,microsoftyaheiui,msyh,simhei,simsun,dengxian,"
+                 "pingfangsc,hiraginosansgb,stheiti,heitisc,arialunicodems")
+
+# 等宽族：只用来画分数 / 时间这类数字，不参与汉字渲染
+MONO_FAMILIES = ("consolas,dejavusansmono,liberationmono,couriernew,"
+                 "notosansmono,monospace")
+
+_CJK_PROBE = "汉字测试"        # 探针：这几个字必须渲染出彼此不同的字形
 _FONT_CACHE: dict = {}
-_FONT_FAMILIES = ("microsoftyaheiui,microsoftyahei,msyh,simhei,simsun,arialunicodems,"
-                  "notosanscjksc,notosanscjk,dejavusans")
-_MONO_FAMILIES = "consolas,dejavusansmono,couriernew,monospace"
+_warned_no_cjk = False
+
+
+def _img_bytes(surf):
+    """取 Surface 的原始字节。pygame 2.1.3 起 tostring 改名 tobytes，两版都兼容。"""
+    fn = getattr(pygame.image, "tobytes", None) or pygame.image.tostring
+    return fn(surf, "RGBA")
+
+
+def reset_font_cache():
+    """清空字体缓存 —— 重新 pygame.init() 之后必须调用。
+
+    为什么不能指望「取用时验活」：pygame.quit() 会释放底层的 TTF_Font，
+    缓存里的 Font 对象随即失效，再拿它 render 会**直接崩在 C 层**（段错误），
+    连 Python 异常都抓不住。所以只能在每次初始化之后主动清掉再重新探测。
+    """
+    _FONT_CACHE.clear()
+
+
+def font_covers_cjk(font) -> bool:
+    """这个字体真的画得出汉字吗？
+
+    字体缺字时 pygame 会把所有汉字都画成同一个 .notdef 方框（豆腐块），
+    所以拿几个不同的汉字渲染出来比字节：只要有两张位图一模一样，就说明
+    字体里根本没有汉字字形，绝不能拿它当界面字体。
+    """
+    try:
+        digs = [_img_bytes(font.render(ch, True, (255, 255, 255)))
+                for ch in _CJK_PROBE]
+    except Exception:
+        return False
+    return len(set(digs)) == len(digs)
+
+
+def _warn_no_cjk_font():
+    """只提示一次：一个中文字体都没找到时界面会是方框。"""
+    global _warned_no_cjk
+    if _warned_no_cjk:
+        return
+    _warned_no_cjk = True
+    print("[提示] 系统里没找到含汉字字形的字体，界面中文会显示成方框。\n"
+          "       Linux 装一个即可： sudo apt install fonts-noto-cjk",
+          file=sys.stderr)
 
 
 def get_font(size: int, bold: bool = False, mono: bool = False) -> pygame.font.Font:
+    """找一个真的能显示汉字的字体；全失败则退回默认字体并给出提示。
+
+    mono=True 时走等宽族，只用于数字 / 计分板，不参与汉字渲染。
+    """
     key = (size, bold, mono)
     font = _FONT_CACHE.get(key)
-    if font is None:
-        fam = _MONO_FAMILIES if mono else _FONT_FAMILIES
-        path = pygame.font.match_font(fam, bold=bold)
-        if path:
-            font = pygame.font.Font(path, size)
-            font.set_bold(bold)
-        else:
-            font = pygame.font.Font(None, size)
-            font.set_bold(bold)
+    if font is not None:
+        return font
+
+    if mono:
+        try:
+            path = pygame.font.match_font(MONO_FAMILIES, bold=bold)
+        except Exception:
+            path = None
+        font = pygame.font.Font(path, size) if path else pygame.font.Font(None, size)
+        font.set_bold(bold)
         _FONT_CACHE[key] = font
+        return font
+
+    for path in FONT_CANDIDATES:                      # ① 平台常见路径
+        if not os.path.exists(path):
+            continue
+        try:
+            cand = pygame.font.Font(path, size)
+        except Exception:
+            continue
+        cand.set_bold(bold)
+        if font_covers_cjk(cand):
+            _FONT_CACHE[key] = cand
+            return cand
+
+    try:                                              # ② fontconfig 按族名
+        path = pygame.font.match_font(FONT_FAMILIES, bold=bold)
+        if path:
+            cand = pygame.font.Font(path, size)
+            cand.set_bold(bold)
+            if font_covers_cjk(cand):
+                _FONT_CACHE[key] = cand
+                return cand
+    except Exception:
+        pass
+
+    try:                                              # ③ SysFont 最后兜底
+        cand = pygame.font.SysFont(FONT_FAMILIES, size, bold=bold)
+        if font_covers_cjk(cand):
+            _FONT_CACHE[key] = cand
+            return cand
+    except Exception:
+        pass
+
+    # 一个汉字都画不出来的字体不能用，宁可退回 pygame 自带字体并明确提示。
+    _warn_no_cjk_font()
+    font = pygame.font.Font(None, size)
+    font.set_bold(bold)
+    _FONT_CACHE[key] = font
     return font
+
+
+def font_regression(bad_path):
+    """反事实自检：把候选全换成「没有汉字的字体」，get_font 必须识别出来。
+
+    返回 (bool, str)。旧版本用 dejavusans 兜底 —— 它名字匹配得到、却画不出
+    汉字，于是界面静默变成方框。这条断言就是防止那种写法复活。
+    """
+    global FONT_FAMILIES, _warned_no_cjk
+    saved_cands = list(FONT_CANDIDATES)
+    saved_fams = FONT_FAMILIES
+    saved_cache = dict(_FONT_CACHE)
+    saved_warned = _warned_no_cjk
+    try:
+        FONT_CANDIDATES[:] = [bad_path]
+        FONT_FAMILIES = "dejavusans,arial,liberationsans"
+        _FONT_CACHE.clear()
+        # 这个场景注定找不到汉字字体，别刷出误导性的「你的系统没有中文字体」
+        _warned_no_cjk = True
+        got = get_font(24)
+        ref = pygame.font.Font(None, 24)
+        same = (_img_bytes(got.render("汉", True, (255, 255, 255)))
+                == _img_bytes(ref.render("汉", True, (255, 255, 255))))
+        return same, bad_path
+    finally:
+        FONT_CANDIDATES[:] = saved_cands
+        FONT_FAMILIES = saved_fams
+        _FONT_CACHE.clear()
+        _FONT_CACHE.update(saved_cache)
+        _warned_no_cjk = saved_warned
 
 
 def draw_text(surf, text, font, color, pos, anchor="topleft", alpha=255):
@@ -1207,6 +1367,9 @@ class App:
 
         pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
+
+        # 重新初始化后旧 Font 已失效，必须清缓存（不清会在 render 时段错误）
+        reset_font_cache()
         pygame.display.set_caption("俄罗斯方块 · Tetris")
 
         self.win_size = (max(480, int(CANVAS_W * scale)), max(480, int(CANVAS_H * scale)))
@@ -1326,6 +1489,7 @@ class App:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="俄罗斯方块 (pygame)")
+    ap.add_argument("--version", action="version", version=f"tetris {__version__}")
     ap.add_argument("--scale", type=float, default=DEFAULT_SCALE, help="初始窗口缩放")
     ap.add_argument("--seed", type=int, default=None, help="随机种子")
     ap.add_argument("--frames", type=int, default=None, help="跑满 N 帧后自动退出")
