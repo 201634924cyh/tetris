@@ -29,7 +29,35 @@ import sys
 
 import pygame
 
-__version__ = "1.1"
+__version__ = "1.2"
+
+
+# ---------------- i18n: bilingual UI (v1.2) ----------------
+# 界面文案中英双语：默认中文，`--lang en` 切换英文。
+# 常量在模块加载时按 _LANG 求值，因此 --lang 在文件顶部立即解析。
+_LANG = "zh"
+
+
+def set_language(lang):
+    global _LANG
+    if lang in ("zh", "en"):
+        _LANG = lang
+
+
+def _t(zh, en):
+    return en if _LANG == "en" else zh
+
+
+def _bootstrap_lang():
+    argv = sys.argv[1:]
+    if "--lang" in argv:
+        i = argv.index("--lang")
+        if i + 1 < len(argv):
+            set_language(argv[i + 1])
+
+
+_bootstrap_lang()
+# ------------------------------------------------------------
 
 # ==============================================================
 # 1. 基础配置
@@ -1229,8 +1257,8 @@ class Game:
         tips_y = CANVAS_H - MARGIN - 116
         if y < tips_y:
             y = tips_y
-        tips = ("← →  移动", "↑ / X  顺时针", "Z  逆时针",
-                "↓  软降   空格  硬降", "C  暂存   P  暂停", "R  重开   M  静音")
+        tips = (_t("← →  移动", "← →  Move"), _t("↑ / X  顺时针", "↑ / X  CW"), _t("Z  逆时针", "Z  CCW"),
+                _t("↓  软降   空格  硬降", "↓ Soft · Space Hard"), _t("C  暂存   P  暂停", "C Hold · P Pause"), _t("R  重开   M  静音", "R Restart · M Mute"))
         for i, t in enumerate(tips):
             draw_text(canvas, t, get_font(12), C_TEXT_FAINT, (x, y + i * 19), "topleft")
 
@@ -1293,23 +1321,23 @@ class Game:
     def _draw_menu(self, canvas):
         self._overlay(canvas, 178)
         cx = CANVAS_W // 2
-        draw_text(canvas, "俄罗斯方块", get_font(46, bold=True), C_TEXT, (cx, 240), "center")
+        draw_text(canvas, _t("俄罗斯方块", "Tetris"), get_font(46, bold=True), C_TEXT, (cx, 240), "center")
         draw_text(canvas, "T E T R I S", get_font(16, bold=True), C_ACCENT, (cx, 288), "center")
 
-        parts = ("← →  左右移动", "↑ / X  顺时针旋转     Z  逆时针旋转",
-                 "↓  软降     空格  硬降", "C  暂存      P / ESC  暂停",
-                 "R  重新开始      M  静音")
+        parts = (_t("← →  左右移动", "← →  Move"), _t("↑ / X  顺时针旋转     Z  逆时针旋转", "↑ / X  CW    Z  CCW"),
+                 _t("↓  软降     空格  硬降", "↓ Soft    Space Hard"), _t("C  暂存      P / ESC  暂停", "C Hold    P / ESC Pause"),
+                 _t("R  重新开始      M  静音", "R Restart    M Mute"))
         for i, t in enumerate(parts):
             draw_text(canvas, t, get_font(15), C_TEXT_DIM, (cx, 372 + i * 26), "center")
 
         pulse = 0.55 + 0.45 * math.sin(pygame.time.get_ticks() / 380.0)
         col = mix(C_TEXT_DIM, C_ACCENT, pulse)
-        draw_text(canvas, "按 Enter 开始", get_font(20, bold=True), col, (cx, 540), "center")
+        draw_text(canvas, _t("按 Enter 开始", "Press Enter to start"), get_font(20, bold=True), col, (cx, 540), "center")
 
         if self.best:
-            draw_text(canvas, f"最高分  {self.best}", get_font(14), C_TEXT_FAINT, (cx, 586), "center")
+            draw_text(canvas, _t(f"最高分  {self.best}", f"Best  {self.best}"), get_font(14), C_TEXT_FAINT, (cx, 586), "center")
         if not self.sfx.ok:
-            draw_text(canvas, "（未检测到音频设备 / numpy，已静音运行）",
+            draw_text(canvas, _t("（未检测到音频设备 / numpy，已静音运行）", "(no audio device / numpy - muted)"),
                       get_font(12), C_TEXT_FAINT, (cx, CANVAS_H - 44), "center")
 
     def _draw_pause(self, canvas):
@@ -1321,9 +1349,9 @@ class Game:
         pygame.draw.rect(layer, (10, 12, 21, 200), layer.get_rect(), border_radius=14)
         canvas.blit(layer, panel.topleft)
         pygame.draw.rect(canvas, C_CARD_EDGE, panel, width=1, border_radius=14)
-        draw_text(canvas, "已暂停", get_font(38, bold=True), C_TEXT, (cx, 300), "center")
-        draw_text(canvas, "P / ESC  继续", get_font(16), C_TEXT_DIM, (cx, 352), "center")
-        draw_text(canvas, "R  重新开始", get_font(16), C_TEXT_DIM, (cx, 382), "center")
+        draw_text(canvas, _t("已暂停", "Paused"), get_font(38, bold=True), C_TEXT, (cx, 300), "center")
+        draw_text(canvas, _t("P / ESC  继续", "P / ESC  Resume"), get_font(16), C_TEXT_DIM, (cx, 352), "center")
+        draw_text(canvas, _t("R  重新开始", "R  Restart"), get_font(16), C_TEXT_DIM, (cx, 382), "center")
 
     def _draw_over(self, canvas):
         self._overlay(canvas, 182)
@@ -1335,20 +1363,20 @@ class Game:
         canvas.blit(layer, panel.topleft)
         pygame.draw.rect(canvas, C_CARD_EDGE, panel, width=1, border_radius=14)
 
-        draw_text(canvas, "游戏结束", get_font(40, bold=True), (255, 138, 148), (cx, 232), "center")
-        rows = (("得分", f"{self.score}"),
-                ("消行", f"{self.lines}"),
-                ("等级", f"{self.level}"),
-                ("用时", self._fmt_time()))
+        draw_text(canvas, _t("游戏结束", "Game Over"), get_font(40, bold=True), (255, 138, 148), (cx, 232), "center")
+        rows = ((_t("得分", "Score"), f"{self.score}"),
+                (_t("消行", "Lines"), f"{self.lines}"),
+                (_t("等级", "Level"), f"{self.level}"),
+                (_t("用时", "Time"), self._fmt_time()))
         y = 300
         for label, value in rows:
             draw_text(canvas, label, get_font(15), C_TEXT_DIM, (cx - 96, y), "midleft")
             draw_text(canvas, value, get_font(22, bold=True, mono=True), C_TEXT, (cx + 96, y), "midright")
             y += 38
         pygame.draw.line(canvas, C_CARD_EDGE, (cx - 110, y - 12), (cx + 110, y - 12), 1)
-        draw_text(canvas, f"最高分  {self.best}", get_font(15), C_WARN, (cx, y + 12), "center")
+        draw_text(canvas, _t(f"最高分  {self.best}", f"Best  {self.best}"), get_font(15), C_WARN, (cx, y + 12), "center")
         pulse = 0.55 + 0.45 * math.sin(pygame.time.get_ticks() / 380.0)
-        draw_text(canvas, "按 Enter 再来一局", get_font(20, bold=True),
+        draw_text(canvas, _t("按 Enter 再来一局", "Press Enter to play again"), get_font(20, bold=True),
                   mix(C_TEXT_DIM, C_ACCENT, pulse), (cx, 548), "center")
 
 
@@ -1373,7 +1401,7 @@ class App:
 
         # 重新初始化后旧 Font 已失效，必须清缓存（不清会在 render 时段错误）
         reset_font_cache()
-        pygame.display.set_caption("俄罗斯方块 · Tetris")
+        pygame.display.set_caption(_t("俄罗斯方块 · Tetris", "Tetris"))
 
         self.win_size = (max(480, int(CANVAS_W * scale)), max(480, int(CANVAS_H * scale)))
         flags = pygame.RESIZABLE
@@ -1493,10 +1521,11 @@ class App:
 def main(argv=None):
     ap = argparse.ArgumentParser(description="俄罗斯方块 (pygame)")
     ap.add_argument("--version", action="version", version=f"tetris {__version__}")
-    ap.add_argument("--scale", type=float, default=DEFAULT_SCALE, help="初始窗口缩放")
-    ap.add_argument("--seed", type=int, default=None, help="随机种子")
-    ap.add_argument("--frames", type=int, default=None, help="跑满 N 帧后自动退出")
-    ap.add_argument("--dummy", action="store_true", help="使用 dummy 视频/音频驱动")
+    ap.add_argument("--scale", type=float, default=DEFAULT_SCALE, help=_t("初始窗口缩放", "initial window scale"))
+    ap.add_argument("--seed", type=int, default=None, help=_t("随机种子", "random seed"))
+    ap.add_argument("--frames", type=int, default=None, help=_t("跑满 N 帧后自动退出", "exit after N frames"))
+    ap.add_argument("--dummy", action="store_true", help=_t("使用 dummy 视频/音频驱动", "use dummy video/audio drivers"))
+    ap.add_argument("--lang", choices=("zh", "en"), default="zh", help="UI 语言 zh / en")
     args = ap.parse_args(argv)
 
     app = App(scale=args.scale, seed=args.seed, frames=args.frames, dummy=args.dummy)
