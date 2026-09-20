@@ -211,6 +211,52 @@ g.last_rot_kick = 0
 g.piece.kind = "L"
 check("T-Spin 判定：非 T 方块 -> False", not g._is_tspin())
 
+
+def tspin_no_line_score(level):
+    """摆一个「T-Spin 但不消行」的局面，返回锁定后的得分。
+
+    只断言得分是安全的判据：普通锁定不加分，只有走 T-Spin 分支才会 +400×level，
+    所以 score == 400×level 本身就证明 T-Spin 被识别到了。
+    （last_tspin 会在随后 _spawn_next 时被重置，不适合在这里断言。）
+    """
+    gg = new_app(seed=11).game
+    gg.start()
+    clear_board(gg)
+    # 铺第 19 行但故意留一格（第 0 列）不填：T 落在 17/18 行，
+    # 这样既凑齐 T 的四个判定角，又不会有整行被填满而进入消行分支。
+    for c in range(1, T.COLS):
+        gg.grid[19][c] = "I"
+    gg.grid[17][3] = "J"
+    gg.grid[17][5] = "J"
+    gg.piece = T.Piece("T", x=3, y=17)
+    gg.piece.rot = 0
+    gg.last_rot_kick = 0
+    gg.level = level
+    gg.score = 0
+    gg.lines = 0
+    gg._lock_piece()
+    return gg.score, gg.last_cleared
+
+
+s1, cleared1 = tspin_no_line_score(1)
+check("T-Spin 无消行：level 1 计 400 分", s1 == 400 and cleared1 == 0,
+      f"score={s1} cleared={cleared1}")
+s5, _ = tspin_no_line_score(5)
+check("T-Spin 无消行的分数同样随等级放大（level 5 -> 2000）", s5 == 400 * 5,
+      f"score={s5} 期望={400 * 5}")
+check("T-Spin 无消行计分常量与代码一致", s1 == T.SCORE_TSPIN_NO_LINES,
+      f"score={s1} const={T.SCORE_TSPIN_NO_LINES}")
+# 普通锁定（非 T-Spin）不应加分
+plain, _ = tspin_no_line_score(1)
+_gg = new_app(seed=11).game
+_gg.start()
+clear_board(_gg)
+_gg.piece = T.Piece("O", x=0, y=0)
+_gg.score = 0
+_gg.last_rot_kick = None
+_gg._lock_piece()
+check("普通锁定不加 T-Spin 分", _gg.score == 0, f"score={_gg.score}")
+
 # ==============================================================
 section("6. Hold 暂存")
 # ==============================================================
